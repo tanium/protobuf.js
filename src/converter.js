@@ -6,7 +6,8 @@
 var converter = exports;
 
 var Enum = require("./enum"),
-    util = require("./util");
+    util = require("./util"),
+    wrappers = require("./wrappers");
 
 /**
  * Generates a partial value fromObject conveter.
@@ -19,7 +20,11 @@ var Enum = require("./enum"),
  */
 function genValuePartial_fromObject(gen, field, fieldIndex, prop) {
     /* eslint-disable no-unexpected-multiline, block-scoped-var, no-redeclare */
-    if (field.resolvedType) {
+    // console.log("genValuePartial_fromObject resolvedType", field.resolvedType)
+    if (field.resolvedType && (field.resolvedType.fullName == ".google.protobuf.Timestamp" || field.resolvedType.fullName == ".google.protobuf.Duration") ) {
+        gen
+        ("m%s=types[%i].fromObject(d%s)", prop, fieldIndex, prop);
+    } else if (field.resolvedType) {
         if (field.resolvedType instanceof Enum) { gen
             ("switch(d%s){", prop);
             for (var values = field.resolvedType.values, keys = Object.keys(values), i = 0; i < keys.length; ++i) {
