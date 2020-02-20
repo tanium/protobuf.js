@@ -99,16 +99,16 @@ wrappers[".google.protobuf.Any"] = {
 wrappers[".google.protobuf.Timestamp"] = {
     fromObject: function(object) {
         if (typeof object === "string") {
-            const ts = new Date(object);
-            const seconds = Math.floor(ts.getTime() / 1000);
-            const nanos = ts.getMilliseconds() * 1000000;
+            var ts = new Date(object);
+            var seconds = Math.floor(ts.getTime() / 1000);
+            var nanos = ts.getMilliseconds() * 1000000;
             return this.create({
                 seconds: seconds,
                 nanos: nanos
             });
         } else if (object instanceof Date) {
-            const seconds = Math.floor(object.getTime() / 1000);
-            const nanos = object.getMilliseconds() * 1000000;
+            var seconds = Math.floor(object.getTime() / 1000);
+            var nanos = object.getMilliseconds() * 1000000;
             return this.create({
                 seconds: seconds,
                 nanos: nanos
@@ -130,18 +130,21 @@ wrappers[".google.protobuf.Timestamp"] = {
 wrappers[".google.protobuf.Duration"] = {
     fromObject: function(object) {
         if (typeof object === "string") {
-            const unit = function() {
+            var unit = function() {
+                if (object.slice(-1) == "ns") return 1e-9;
+                if (object.slice(-1) == "µs") return 1e-6;
+                if (object.slice(-1) == "ms") return 1e-3;
                 if (object.slice(-1) == "s") return 1;
                 if (object.slice(-1) == "m") return 60;
                 if (object.slice(-1) == "h") return 60 * 60;
                 if (object.slice(-1) == "d") return 60 * 60 * 24;
                 throw new Error("invalid duration unit : must be one of s, m, h, or d")
             }();
-            const value = parseInt(object.slice(0,-1));
-            const seconds = value * unit;
-            return this.create({
-                seconds: seconds,
-                nanos: 0,
+            var value = parseFloat(object.slice(0,-1));
+            var seconds = value * unit;
+            return google.protobuf.Duration.create({
+                seconds: Math.floor(seconds),
+                nanos: (seconds - Math.floor(seconds)) * 1e9,
             });
         }
         return this.fromObject(object);
