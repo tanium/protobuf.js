@@ -1,6 +1,6 @@
 /*!
  * protobuf.js v6.8.8 (c) 2016, daniel wirtz
- * compiled thu, 19 jul 2018 00:33:25 utc
+ * compiled thu, 20 feb 2020 23:21:56 utc
  * licensed under the bsd-3-clause license
  * see: https://github.com/dcodeio/protobuf.js for details
  */
@@ -1518,7 +1518,8 @@ common.get = function get(file) {
 var converter = exports;
 
 var Enum = require(15),
-    util = require(37);
+    util = require(37),
+    wrappers = require(41);
 
 /**
  * Generates a partial value fromObject conveter.
@@ -1531,7 +1532,11 @@ var Enum = require(15),
  */
 function genValuePartial_fromObject(gen, field, fieldIndex, prop) {
     /* eslint-disable no-unexpected-multiline, block-scoped-var, no-redeclare */
-    if (field.resolvedType) {
+    // console.log("genValuePartial_fromObject resolvedType", field.resolvedType)
+    if (field.resolvedType && (field.resolvedType.fullName == ".google.protobuf.Timestamp" || field.resolvedType.fullName == ".google.protobuf.Duration") ) {
+        gen
+        ("m%s=types[%i].fromObject(d%s)", prop, fieldIndex, prop);
+    } else if (field.resolvedType) {
         if (field.resolvedType instanceof Enum) { gen
             ("switch(d%s){", prop);
             for (var values = field.resolvedType.values, keys = Object.keys(values), i = 0; i < keys.length; ++i) {
@@ -1804,7 +1809,7 @@ converter.toObject = function toObject(mtype) {
     /* eslint-enable no-unexpected-multiline, block-scoped-var, no-redeclare */
 };
 
-},{"15":15,"37":37}],13:[function(require,module,exports){
+},{"15":15,"37":37,"41":41}],13:[function(require,module,exports){
 "use strict";
 module.exports = decoder;
 
@@ -1961,7 +1966,7 @@ function encoder(mtype) {
         // Map fields
         if (field.map) {
             gen
-    ("if(%s!=null&&m.hasOwnProperty(%j)){", ref, field.name) // !== undefined && !== null
+    ("if(%s!=null&&Object.hasOwnProperty.call(m,%j)){", ref, field.name) // !== undefined && !== null
         ("for(var ks=Object.keys(%s),i=0;i<ks.length;++i){", ref)
             ("w.uint32(%i).fork().uint32(%i).%s(ks[i])", (field.id << 3 | 2) >>> 0, 8 | types.mapKey[field.keyType], field.keyType);
             if (wireType === undefined) gen
@@ -1999,7 +2004,7 @@ function encoder(mtype) {
         // Non-repeated
         } else {
             if (field.optional) gen
-    ("if(%s!=null&&m.hasOwnProperty(%j))", ref, field.name); // !== undefined && !== null
+    ("if(%s!=null&&Object.hasOwnProperty.call(m,%j))", ref, field.name); // !== undefined && !== null
 
             if (wireType === undefined)
         genTypePartial(gen, field, index, ref);
@@ -2013,6 +2018,7 @@ function encoder(mtype) {
     ("return w");
     /* eslint-enable no-unexpected-multiline, block-scoped-var, no-redeclare */
 }
+
 },{"15":15,"36":36,"37":37}],15:[function(require,module,exports){
 "use strict";
 module.exports = Enum;
@@ -3213,7 +3219,7 @@ Namespace.arrayToJSON = arrayToJSON;
 Namespace.isReservedId = function isReservedId(reserved, id) {
     if (reserved)
         for (var i = 0; i < reserved.length; ++i)
-            if (typeof reserved[i] !== "string" && reserved[i][0] <= id && reserved[i][1] >= id)
+            if (typeof reserved[i] !== "string" && reserved[i][0] <= id && reserved[i][1] > id)
                 return true;
     return false;
 };
@@ -4270,7 +4276,9 @@ function parse(source, root, options) {
     function ifBlock(obj, fnIf, fnElse) {
         var trailingLine = tn.line;
         if (obj) {
-            obj.comment = cmnt(); // try block-type comment
+            if(typeof obj.comment !== "string") {
+              obj.comment = cmnt(); // try block-type comment
+            }
             obj.filename = parse.filename;
         }
         if (skip("{", true)) {
@@ -4603,6 +4611,10 @@ function parse(source, root, options) {
     }
 
     function parseMethod(parent, token) {
+        // Get the comment of the preceding line now (if one exists) in case the
+        // method is defined across multiple lines.
+        var commentText = cmnt();
+
         var type = token;
 
         /* istanbul ignore if */
@@ -4634,6 +4646,7 @@ function parse(source, root, options) {
         skip(")");
 
         var method = new Method(name, type, requestType, responseType, requestStream, responseStream);
+        method.comment = commentText;
         ifBlock(method, function parseMethod_block(token) {
 
             /* istanbul ignore else */
@@ -4706,10 +4719,6 @@ function parse(source, root, options) {
                 break;
 
             case "option":
-
-                /* istanbul ignore if */
-                if (!head)
-                    throw illegal(token);
 
                 parseOption(ptr, token);
                 skip(";");
@@ -5300,6 +5309,16 @@ Root.prototype.load = function load(filename, options, callback) {
             throw err;
         cb(err, root);
     }
+	
+    // Bundled definition existence checking
+    function getBundledFileName(filename) {
+        var idx = filename.lastIndexOf("google/protobuf/");
+        if (idx > -1) {
+            var altname = filename.substring(idx);
+            if (altname in common) return altname; 
+        }
+        return null;
+    }
 
     // Processes a single file
     function process(filename, source) {
@@ -5315,11 +5334,11 @@ Root.prototype.load = function load(filename, options, callback) {
                     i = 0;
                 if (parsed.imports)
                     for (; i < parsed.imports.length; ++i)
-                        if (resolved = self.resolvePath(filename, parsed.imports[i]))
+                        if (resolved = (getBundledFileName(parsed.imports[i]) || self.resolvePath(filename, parsed.imports[i])))
                             fetch(resolved);
                 if (parsed.weakImports)
                     for (i = 0; i < parsed.weakImports.length; ++i)
-                        if (resolved = self.resolvePath(filename, parsed.weakImports[i]))
+                        if (resolved = (getBundledFileName(parsed.weakImports[i]) || self.resolvePath(filename, parsed.weakImports[i])))
                             fetch(resolved, true);
             }
         } catch (err) {
@@ -5331,14 +5350,6 @@ Root.prototype.load = function load(filename, options, callback) {
 
     // Fetches a single file
     function fetch(filename, weak) {
-
-        // Strip path if this file references a bundled definition
-        var idx = filename.lastIndexOf("google/protobuf/");
-        if (idx > -1) {
-            var altname = filename.substring(idx);
-            if (altname in common)
-                filename = altname;
-        }
 
         // Skip if already loaded / attempted
         if (self.files.indexOf(filename) > -1)
@@ -8131,20 +8142,22 @@ var Message = require(21);
 
 // Custom wrapper for Any
 wrappers[".google.protobuf.Any"] = {
-
     fromObject: function(object) {
-
         // unwrap value type if mapped
         if (object && object["@type"]) {
-            var type = this.lookup(object["@type"]);
+            // Only use fully qualified type name after the last '/'
+            var name = object["@type"].substring(object["@type"].lastIndexOf("/") + 1);
+            var type = this.lookup(name);
             /* istanbul ignore else */
             if (type) {
                 // type_url does not accept leading "."
-                var type_url = object["@type"].charAt(0) === "." ?
-                    object["@type"].substr(1) : object["@type"];
+                var type_url = object["@type"].charAt(0) === "." ? object["@type"].substr(1) : object["@type"];
                 // type_url prefix is optional, but path seperator is required
+                if (type_url.indexOf("/") === -1) {
+                    type_url = "/" + type_url;
+                }
                 return this.create({
-                    type_url: "/" + type_url,
+                    type_url: type_url,
                     value: type.encode(type.fromObject(object)).finish()
                 });
             }
@@ -8154,24 +8167,98 @@ wrappers[".google.protobuf.Any"] = {
     },
 
     toObject: function(message, options) {
+        // Default prefix
+        var googleApi = "type.googleapis.com/";
+        var prefix = "";
 
         // decode value if requested and unmapped
         if (options && options.json && message.type_url && message.value) {
             // Only use fully qualified type name after the last '/'
             var name = message.type_url.substring(message.type_url.lastIndexOf("/") + 1);
+            // Separate the prefix used
+            prefix = message.type_url.substring(0, message.type_url.lastIndexOf("/") + 1);
             var type = this.lookup(name);
             /* istanbul ignore else */
-            if (type)
-                message = type.decode(message.value);
+            if (type) message = type.decode(message.value);
         }
 
         // wrap value if unmapped
         if (!(message instanceof this.ctor) && message instanceof Message) {
             var object = message.$type.toObject(message, options);
-            object["@type"] = message.$type.fullName;
+            var messageName =
+                message.$type.fullName[0] === "." ? message.$type.fullName.substr(1) : message.$type.fullName;
+            // Default to type.googleapis.com prefix if no prefix is used
+            if (prefix === "") {
+                prefix = googleApi;
+            }
+            var name = prefix + messageName;
+            object["@type"] = name;
             return object;
         }
 
+        return this.toObject(message, options);
+    }
+};
+
+// Custom wrapper for Timestamp
+wrappers[".google.protobuf.Timestamp"] = {
+    fromObject: function(object) {
+        if (typeof object === "string") {
+            var ts = new Date(object);
+            var seconds = Math.floor(ts.getTime() / 1000);
+            var nanos = ts.getMilliseconds() * 1000000;
+            return this.create({
+                seconds: seconds,
+                nanos: nanos
+            });
+        } else if (object instanceof Date) {
+            var seconds = Math.floor(object.getTime() / 1000);
+            var nanos = object.getMilliseconds() * 1000000;
+            return this.create({
+                seconds: seconds,
+                nanos: nanos
+            });
+        }
+
+        return this.fromObject(object);
+    },
+
+    toObject: function(message, options) {
+        if (options && options.json) {
+            return new Date(message.seconds * 1000 + message.nanos / 1000000);
+        }
+        return this.toObject(message, options);
+    }
+};
+
+// Custom wrapper for Duration
+wrappers[".google.protobuf.Duration"] = {
+    fromObject: function(object) {
+        if (typeof object === "string") {
+            var unit = function() {
+                if (object.slice(-1) == "ns") return 1e-9;
+                if (object.slice(-1) == "µs") return 1e-6;
+                if (object.slice(-1) == "ms") return 1e-3;
+                if (object.slice(-1) == "s") return 1;
+                if (object.slice(-1) == "m") return 60;
+                if (object.slice(-1) == "h") return 60 * 60;
+                if (object.slice(-1) == "d") return 60 * 60 * 24;
+                throw new Error("invalid duration unit : must be one of s, m, h, or d")
+            }();
+            var value = parseFloat(object.slice(0,-1));
+            var seconds = value * unit;
+            return google.protobuf.Duration.create({
+                seconds: Math.floor(seconds),
+                nanos: (seconds - Math.floor(seconds)) * 1e9,
+            });
+        }
+        return this.fromObject(object);
+    },
+
+    toObject: function(message, options) {
+        if (options && options.json && message.nanos == 0) {
+            return message.seconds.toString() + "s"
+        }
         return this.toObject(message, options);
     }
 };
